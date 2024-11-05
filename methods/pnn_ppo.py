@@ -50,15 +50,13 @@ register( id="MetaGridEnv/metagrid-v0",
 
 from gymnasium.vector import SyncVectorEnv
 
-# from agents.frapa_agent_actions_from_sim_max import FraPAAgent #### !!! NOTE NOT FROM frapa_agent
-from agents.frapa_agent_actions_from_sim_no_pretrain_actor import FraPAAgent
 from agents.pnn_agent import PNNAgent
 
 from utils.compatibility import EnvCompatibility
 
 from pympler import asizeof
 
-# needed for atari
+# needed for atari if you decide to use
 from stable_baselines3.common.atari_wrappers import (  # isort:skip
     ClipRewardEnv,
     EpisodicLifeEnv,
@@ -92,9 +90,8 @@ class Args:
     """whether to capture videos of the agent performances (check out `videos` folder)"""
 
     # Algorithm specific arguments
-    env_id: str = "procgen-ninja"
-    """the id of the environment: MetaGridEnv/metagrid-v0, LunarLander-v2, procgen-coinrun,
-    atari:BreakoutNoFrameskip-v4, highway:highway-fast-v0"""
+    env_id: str = ""
+    """the id of the environment: computed from the list of env_ids"""
     total_timesteps: int = 4000000
     """total timesteps of the experiments"""
     learning_rate: float = 5e-4
@@ -131,8 +128,7 @@ class Args:
     """When to run a seperate epoch run to be reported. Make sure this is a multple of num_envs."""
     anneal_ent: bool = False
     """Toggle entropy coeff annealing"""
-    domain_size: int = 14
-    """The size of the metagrid domain if using metagrid"""
+
 
     # to be filled in runtime
     batch_size: int = 0
@@ -142,68 +138,39 @@ class Args:
     num_iterations: int = 0
     """the number of iterations (computed in runtime)"""
     
-    # Below are fracos specific
-    max_clusters_per_clusterer: int = 50
-    """the maximum number of clusters at each hierarchy level"""
-    current_depth: int = 0
-    """this is the current level of hierarchy we are considering"""
-    chain_length: int = 5
-    """How long our option chains are"""
-    NN_cluster_search: bool = True
-    """Should we use NN to predict our clusters? if false will use hdbscan"""
-    gen_strength: float = 0.33
-    """This should be the strength of generalisation. for NN 0.1 seems good. for hdbscan 0.33"""    
-    FraCOs_bias_factor: float = 1
-    """How much to multiply the logit by to bias towards choosing the identified fracos"""
-    FraCOs_bias_depth_anneal: bool = False
-    """If True, then lower depths will have less bias factor than higher depths -- encourages searching higher depths first"""
-    max_ep_length: int = 1000 # massive as default *** importatnt, for procgen this limits the eval ep lengths.
-    """Max episode length"""
-    fix_mdp: bool = False
-    """whether the mdp should be fixed on reset. useful for generating trajectories."""
+
     gen_traj: bool = False # MUST CHANGE THIS to FALSE BEFORE RUNNING ELSE WONT GET ANY RESULTS FROM EVALS!
     """ A tag which should be used if we are generating a trajectory, not for testing. """
-    top_only: bool = False # not implemented yet
-    """ This will cause the agent to only use the top level of abstraction and the primitives."""
-    vae: bool = False ## Need to set this to false as a default
-    
-    vae_latent_shape: int = 10
     resnet_features: int = 1 # 1 for true and 0 for false
     
     debug: bool = False # makesure to change to False before running
     
     #env_specific
-    style: str = "grid"
     proc_start: int = 1 # 0 for train. > 50 for test
     proc_num_levels: int = 30 # 50 for train. > for test
     proc_sequential: bool = True
     proc_int_start: int = 1 # the level to start on when we swap for a new environment / continued learning 
-    int_env_id: str = "procgen-starpilot"
     
     max_eval_ep_len: int = 1000
-    sep_evals: int = 0 # 1 for true, 0 for false
     specific_proc_list_input: str = "None"
     specific_proc_list = ast.literal_eval(specific_proc_list_input)
     
     
     # frapa specific
     number_hs: int = 100
-    reward_limit: float = 5 # -11 for debug
-    number_of_compress_envs = 30
-    min_similarity_score: float = 0.95 # cosine sim above 0.95 seems sensible
-    compress_reps: int = 5
-    max_dict_in_compress: int = 0
-    max_val_only: int = 0
+    """The total number of checkpoints or hierarchy levels used with HOP but can be used to 
+    distinguish PNN-PPO runs from HOP"""
+
     start_ood_level: int = 42000
-    all_optimizers: bool = False
-    env_ids: str = "procgen-ninja,procgen-starpilot"
+    env_ids: str = "procgen-plunder,procgen-starpilot"
+    """The environment ids to cycle between"""
     cycles: int = 2
-    
+    """The number of times to cycle through the env_ids"""
     #procgen specific
     easy: int = 1 # 1 = True and 0 = False and 2 = Exploration
     
     eval_interval: int = 100000
-    
+    """The number of timesteps between evaluations"""
     #eval
     eval_specific_envs: int = 0
     eval_repeats: int = 1
@@ -212,7 +179,7 @@ class Args:
     use_monochrome: int = 0 # 0 for false, 1 for true
     
     PNN: int = 1 # just to group in wandb
-    max_columns: int = 2
+    max_columns: int = 0
     
     if debug:
         # num_envs=1
@@ -377,7 +344,7 @@ def conduct_evals(agent, writer, global_step_truth, run_name, device, current_co
                             if first_ep_rewards[ve+(sl_counter-start_level)] == None:
                                 if "procgen" in args.env_id:
                                     first_ep_success[ve+(sl_counter-start_level)] = test_infos["final_info"][ve]["episode"]["r"].item()
-                                    first_ep_rewards[ve+(sl_counter-start_level)] = test_infos["final_info"][ve]["episode"]["r"].item() - 0.01*test_infos["final_info"][ve]["episode"]["l"].item()
+                                    first_ep_rewards[ve+(sl_counter-start_level)] = test_infos["final_info"][ve]["episode"]["r"].item()
                                 else:
                                     first_ep_rewards[ve+(sl_counter-start_level)] = cum_first_ep_rewards[ve+(sl_counter-start_level)]
                                 
@@ -391,14 +358,10 @@ def conduct_evals(agent, writer, global_step_truth, run_name, device, current_co
                 sl_counter += args.eval_batch_size
             rep_summer += sum(first_ep_rewards)
             success_summer += sum(first_ep_success)
-        # for ve in range(len(test_reward)):
-        #     cum_first_ep_rewards[ve] += test_reward[ve]
-        #     if first_ep_rewards[ve] == 0:
-        #         first_ep_rewards[ve] = cum_first_ep_rewards[ve]
+
                     
         
     writer.add_scalar("charts/avg_IID_eval_ep_rewards", rep_summer/(len(first_ep_rewards)*args.eval_repeats), global_step_truth)
-    writer.add_scalar("charts/IID_success_percentage", (success_summer*10)/(len(first_ep_success)*args.eval_repeats), global_step_truth)
     del test_envs
     
     ## OOD
@@ -442,7 +405,7 @@ def conduct_evals(agent, writer, global_step_truth, run_name, device, current_co
                             if first_ep_rewards[ve+(sl_counter-args.start_ood_level)] == None:
                                 if "procgen" in args.env_id:
                                     first_ep_success[ve+(sl_counter-args.start_ood_level)] = test_infos["final_info"][ve]["episode"]["r"].item()
-                                    first_ep_rewards[ve+(sl_counter-args.start_ood_level)] = test_infos["final_info"][ve]["episode"]["r"].item() - 0.01*test_infos["final_info"][ve]["episode"]["l"].item()
+                                    first_ep_rewards[ve+(sl_counter-args.start_ood_level)] = test_infos["final_info"][ve]["episode"]["r"].item()
                                 else:
                                     first_ep_rewards[ve+(sl_counter-args.args.start_ood_level)] = cum_first_ep_rewards[ve+(sl_counter-args.start_ood_level)]
                                 
@@ -457,14 +420,9 @@ def conduct_evals(agent, writer, global_step_truth, run_name, device, current_co
             
             rep_summer += sum(first_ep_rewards)
             success_summer += sum(first_ep_success)
-        # for ve in range(len(test_reward)):
-        #     cum_first_ep_rewards[ve] += test_reward[ve]
-        #     if first_ep_rewards[ve] == 0:
-        #         first_ep_rewards[ve] = cum_first_ep_rewards[ve]
                     
         
     writer.add_scalar("charts/avg_OOD_eval_ep_rewards", rep_summer/(len(first_ep_rewards)*args.eval_repeats), global_step_truth)
-    writer.add_scalar("charts/OOD_success_percentage", (success_summer*10)/(len(first_ep_success)*args.eval_repeats), global_step_truth)
     del test_envs
 
 
@@ -515,14 +473,15 @@ def frapa_ppo(args):
     args.num_iterations = args.total_timesteps // args.batch_size
 
     env_id_list_ind = args.env_ids.split(",")
+    args.env_id = env_id_list_ind[0]
+    args.max_columns = len(env_id_list_ind)
     env_id_list = env_id_list_ind * args.cycles
     column_names_to_id = {env_id_list_ind[i]: i for i in range(len(env_id_list_ind))}
 
     change_inc = args.num_iterations//len(env_id_list)
     print(change_inc)
-    original_env_id = args.env_id
     
-    run_name = f"PNN_{args.env_id}__{args.exp_name}__{args.seed}__{args.current_depth}__{args.FraCOs_bias_factor}__{datetime.now()}"
+    run_name = f"PNN_{env_id_list_ind}__{args.exp_name}__{args.seed}__{datetime.now()}"
     if args.track and not args.debug:
         import wandb
 
@@ -578,10 +537,7 @@ def frapa_ppo(args):
     # ALGO Logic: Storage setup
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     resnet_results = torch.zeros((args.num_steps, args.num_envs, 512)).to(device)
-    if "highway" in args.env_id:
-        obs_np_flat = np.zeros((args.num_steps, args.num_envs, reduce(lambda x, y: x * y, envs.single_observation_space.shape)), dtype=np.float32) # dsc speed up
-    else:
-        obs_np_flat = np.zeros((args.num_steps, args.num_envs, reduce(lambda x, y: x * y, envs.single_observation_space.shape)), dtype=np.int64) # dsc speed up
+    obs_np_flat = np.zeros((args.num_steps, args.num_envs, reduce(lambda x, y: x * y, envs.single_observation_space.shape)), dtype=np.int64) # dsc speed up
     
     actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
     logprobs = torch.zeros((args.num_steps, args.num_envs)).to(device)
@@ -624,13 +580,17 @@ def frapa_ppo(args):
         
         if iteration % change_inc == 0:
             # PNN logic here -- change to the next column, freeze params of the first
-            level +=1
+            level += 1
+            print(f"Old env id was {args.env_id}")
             env_id_temp = env_id_list[level]
             current_column = column_names_to_id[env_id_temp]
 
             agent = freeze_non_active_columns(agent, current_column)
             
-            args.env_id = env_id_list[level]
+            args.env_id = env_id_temp
+
+            print(f"New env id is {args.env_id}")   
+
             if args.proc_sequential:
                 envs = SyncVectorEnv(
                     [make_env(args.env_id, seed, args.capture_video, run_name, args, sl=args.proc_int_start, nl=0, easy=args.easy, seed=seed) for seed in seeds],
@@ -685,16 +645,7 @@ def frapa_ppo(args):
                 values[step] = value.flatten()
             actions[step] = action
 
-            logprobs[step] = logprob
-
-            if ((args.debug) and ("metagrid" in args.env_id)):
-                # plt.imshow(np.array(next_obs.cpu())[0][:49].reshape(7,7), cmap='Reds')
-                # plt.title(action.item())
-                # plt.show()
-                plt.imshow(envs.envs[0].env_master.domain)
-                plt.title(action.item())
-                plt.show()
-                
+            logprobs[step] = logprob                
                 
             if (args.debug) & ("procgen" in args.env_id):
                 show_procgen(next_obs, 0, global_decisions, action)
@@ -703,24 +654,8 @@ def frapa_ppo(args):
             if args.num_envs == 1:
                 action = action.unsqueeze(0)
             next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-            
-            # For procgen we should change the rewards a little here -- but not those which are recorded!
-            
-            ## UNHASH IF YOU WANT THIS BACK!
-            
+                       
             next_done = np.logical_or(terminations, truncations)
-            # if "procgen" in args.env_id:
-            #     condition1 = (reward == 0) & (next_done == True)
-            #     condition2 = (reward == 0) & (next_done == False)
-            #     if "final_info" in infos:
-            #         lengths = np.array([entry['episode']['l'].item() if entry is not None and 'episode' in entry and 'l' in entry['episode'] else None for entry in infos["final_info"]], dtype=object)
-            #         lengths_safe = np.array([item if item is not None else 1000 for item in lengths])
-            #     else:
-            #         lengths_safe = np.full(condition1.shape, 1000)
-            
-            #     reward = np.where((reward == 0) & (next_done == True) & (np.array(lengths_safe) > 998), reward - 0.002,
-            #                 np.where((reward == 0) & (next_done == True) & (np.array(lengths_safe) < 998), reward - 10,
-            #                         np.where((reward == 0) & (next_done == False), reward - 0.001, reward)))
             
             cum_training_rewards += reward            
             
@@ -779,10 +714,6 @@ def frapa_ppo(args):
                 
                 # reward adjust (should be a wrapper but results gathered using this)
                 adjusted_rewards = rewards[t]
-                if "MetaGrid" in args.env_id:
-                    for i in range(len(adjusted_rewards)):
-                        if -0.001 > adjusted_rewards[i] > -0.1:
-                            adjusted_rewards[i] = -0.001
                 
                 delta = adjusted_rewards + args.gamma * nextvalues * nextnonterminal - values[t]
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
