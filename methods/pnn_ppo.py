@@ -467,7 +467,7 @@ def freeze_non_active_columns(agent, current_column):
     return agent
 
 
-def frapa_ppo(args):    
+def pnn_ppo(args):    
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
     args.num_iterations = args.total_timesteps // args.batch_size
@@ -849,4 +849,4 @@ if __name__ == "__main__":
     # args.debug=True
     
     
-    frapa_ppo(args)
+    pnn_ppo(args)
