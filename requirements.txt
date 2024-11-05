@@ -1,0 +1,30 @@
+
+gym
+pygame
+matplotlib
+pybullet
+joblib==1.1.0
+umap-learn
+pandas
+spyder-kernels==2.4.*
+gymnasium
+swig
+gymnasium[box2d]
+tyro
+cffi
+imageio
+tensorflow
+imblearn
+ModernGL<5.0.0
+wandb
+stable-baselines3[extra]
+minigrid
+transformers
+timm
+torch
+procgen
+
+# conda install -c conda-forge hdbscan
+# conda install tensorflow-estimator==2.1.0
+
+# pip install gym==0.19.0 pygame matplotlib pybullet joblib==1.1.0 umap-learn pandas spyder-kernels==2.4.* gymnasium swig "gymnasium[box2d]" tyro cffi imageio tensorflow imblearn "ModernGL<5.0.0" wandb "stable-baselines3[extra]" minigrid transformers timm torch
